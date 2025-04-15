@@ -86,7 +86,7 @@ def extract_match_dict(match_url):
         chrome_options.binary_location = "/usr/bin/chromium"
         
         # استخدام ChromeDriverManager لتنزيل إصدار ChromeDriver متوافق
-        service = Service(ChromeDriverManager().install())
+        service = Service(ChromeDriverManager(version="120.0.6099.224").install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         st.write("جارٍ تحميل الصفحة...")
