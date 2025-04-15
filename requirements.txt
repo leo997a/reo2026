@@ -11,5 +11,5 @@ scipy
 arabic_reshaper
 python-bidi
 selenium
-webdriver_manager>=0.8.0
+webdriver_manager>=4.0.2
 beautifulsoup4
