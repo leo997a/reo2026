@@ -75,23 +75,26 @@ def extract_match_dict(match_url):
     driver = None  # تعيين driver إلى None افتراضيًا
     try:
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")  # استخدام الوضع الجديد لـ headless
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36"
+            "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36"
         )
         # تحديد مسار Chromium في Streamlit Cloud
         chrome_options.binary_location = "/usr/bin/chromium"
+        
+        # استخدام ChromeDriverManager لتنزيل إصدار ChromeDriver متوافق
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
+        
         st.write("جارٍ تحميل الصفحة...")
         driver.get(match_url)
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, 'script'))
         )
-        time.sleep(5)
+        time.sleep(5)  # الانتظار لضمان تحميل الصفحة بالكامل
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         element = soup.find(lambda tag: tag.name == 'script' and 'matchCentreData' in tag.text)
         if not element:
@@ -104,7 +107,10 @@ def extract_match_dict(match_url):
         return None
     finally:
         if driver is not None:  # التحقق من وجود driver قبل استدعاء quit
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass  # تجاهل أي أخطاء أثناء إغلاق driver
 # دالة معالجة البيانات
 def extract_data_from_dict(data):
     try:
