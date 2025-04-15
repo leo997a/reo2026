@@ -10,6 +10,6 @@ unidecode
 scipy
 arabic_reshaper
 python-bidi
-selenium
+selenium>=4.11.2
 webdriver_manager>=4.0.2
 beautifulsoup4
