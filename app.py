@@ -40,7 +40,7 @@ def reshape_arabic_text(text):
     reshaped_text = arabic_reshaper.reshape(text)
     return get_display(reshaped_text)
 
-# إضافة CSS لدعم RTL في Streamlit
+# إضافة CSS لدعم RTL
 st.markdown("""
     <style>
     body {
@@ -60,6 +60,18 @@ default_bg_color = '#1e1e2f'
 default_gradient_colors = ['#003087', '#d00000']
 violet = '#800080'
 
+# إعداد Session State
+if 'json_data' not in st.session_state:
+    st.session_state.json_data = None
+if 'df' not in st.session_state:
+    st.session_state.df = None
+if 'teams_dict' not in st.session_state:
+    st.session_state.teams_dict = None
+if 'players_df' not in st.session_state:
+    st.session_state.players_df = None
+if 'analysis_triggered' not in st.session_state:
+    st.session_state.analysis_triggered = False
+
 # إضافة أدوات اختيار الألوان في الشريط الجانبي
 st.sidebar.title('اختيار الألوان')
 hcol = st.sidebar.color_picker('لون الفريق المضيف', default_hcol, key='hcol_picker')
@@ -71,30 +83,27 @@ gradient_colors = [gradient_start, gradient_end]
 line_color = st.sidebar.color_picker('لون الخطوط', '#ffffff', key='line_color_picker')
 
 # دالة استخراج البيانات من WhoScored
+@st.cache_data
 def extract_match_dict(match_url):
-    driver = None  # تعيين driver إلى None افتراضيًا
+    driver = None
     try:
         chrome_options = Options()
-        chrome_options.add_argument("--headless=new")  # استخدام الوضع الجديد لـ headless
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument(
             "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36"
         )
-        # تحديد مسار Chromium في Streamlit Cloud
         chrome_options.binary_location = "/usr/bin/chromium"
-        
-        # استخدام ChromeDriverManager لتنزيل إصدار ChromeDriver متوافق
         service = Service(ChromeDriverManager(version="120.0.6099.224").install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        
         st.write("جارٍ تحميل الصفحة...")
         driver.get(match_url)
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, 'script'))
         )
-        time.sleep(5)  # الانتظار لضمان تحميل الصفحة بالكامل
+        time.sleep(5)
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         element = soup.find(lambda tag: tag.name == 'script' and 'matchCentreData' in tag.text)
         if not element:
@@ -106,12 +115,14 @@ def extract_match_dict(match_url):
         st.error(f"خطأ أثناء استخراج البيانات: {str(e)}")
         return None
     finally:
-        if driver is not None:  # التحقق من وجود driver قبل استدعاء quit
+        if driver is not None:
             try:
                 driver.quit()
             except:
-                pass  # تجاهل أي أخطاء أثناء إغلاق driver
+                pass
+
 # دالة معالجة البيانات
+@st.cache_data
 def extract_data_from_dict(data):
     try:
         events_dict = data["events"]
@@ -153,7 +164,7 @@ def get_event_data(json_data):
         for period in np.arange(1, match_events['period'].max() + 1, 1):
             if period > 1:
                 t_delta = match_events[match_events['period'] == period - 1]['cumulative_mins'].max() - \
-                               match_events[match_events['period'] == period]['cumulative_mins'].min()
+                          match_events[match_events['period'] == period]['cumulative_mins'].min()
             else:
                 t_delta = 0
             match_events.loc[match_events['period'] == period, 'cumulative_mins'] += t_delta
@@ -210,7 +221,7 @@ def get_event_data(json_data):
                     nex = next_evt
                     carry.loc[0, 'eventId'] = prev['eventId'] + 0.5
                     carry['minute'] = np.floor(((init_next_evt['minute'] * 60 + init_next_evt['second']) + (
-                            prev['minute'] * 60 + prev['second'])) / (2 * 60))
+                        prev['minute'] * 60 + prev['second'])) / (2 * 60))
                     carry['second'] = (((init_next_evt['minute'] * 60 + init_next_evt['second']) +
                                         (prev['minute'] * 60 + prev['second'])) / 2) - (carry['minute'] * 60)
                     carry['teamId'] = nex['teamId']
@@ -352,7 +363,7 @@ def get_event_data(json_data):
             current_team = pos_chain_df.loc[valid_pos_start_id[idx], 'teamName']
             previous_team = pos_chain_df.loc[valid_pos_start_id[idx - 1], 'teamName']
             if ((previous_team == current_team) & (pos_chain_df.loc[valid_pos_start_id[idx], 'kick_off_goal'] != 1) & 
-                    (pos_chain_df.loc[valid_pos_start_id[idx], 'kick_off_period_change'] != 1)):
+                (pos_chain_df.loc[valid_pos_start_id[idx], 'kick_off_period_change'] != 1)):
                 pos_chain_df.loc[valid_pos_start_id[idx], 'possession_id'] = np.nan
             else:
                 pos_chain_df.loc[valid_pos_start_id[idx], 'possession_id'] = possession_id
@@ -380,392 +391,403 @@ uploaded_file = st.file_uploader("أو قم بتحميل ملف JSON (اختيا
 
 if st.button("تحليل المباراة"):
     with st.spinner("جارٍ استخراج بيانات المباراة..."):
-        json_data = None
+        st.session_state.json_data = None
+        st.session_state.df = None
+        st.session_state.teams_dict = None
+        st.session_state.players_df = None
         if uploaded_file:
-            json_data = json.load(uploaded_file)
+            try:
+                st.session_state.json_data = json.load(uploaded_file)
+            except Exception as e:
+                st.error(f"خطأ في تحميل ملف JSON: {str(e)}")
         else:
-            json_data = extract_match_dict(match_url)
+            st.session_state.json_data = extract_match_dict(match_url)
         
-        if json_data:
-            df, teams_dict, players_df = get_event_data(json_data)
-            if df is not None and teams_dict and players_df is not None:
-                hteamID = list(teams_dict.keys())[0]
-                ateamID = list(teams_dict.keys())[1]
-                hteamName = teams_dict[hteamID]
-                ateamName = teams_dict[ateamID]
-                
-                homedf = df[(df['teamName'] == hteamName)]
-                awaydf = df[(df['teamName'] == ateamName)]
-                hxT = homedf['xT'].sum().round(2)
-                axT = awaydf['xT'].sum().round(2)
-                
-                hgoal_count = len(homedf[(homedf['teamName'] == hteamName) & (homedf['type'] == 'Goal') & (~homedf['qualifiers'].str.contains('OwnGoal'))])
-                agoal_count = len(awaydf[(awaydf['teamName'] == ateamName) & (awaydf['type'] == 'Goal') & (~awaydf['qualifiers'].str.contains('OwnGoal'))])
-                hgoal_count += len(awaydf[(awaydf['teamName'] == ateamName) & (awaydf['type'] == 'Goal') & (awaydf['qualifiers'].str.contains('OwnGoal'))])
-                agoal_count += len(homedf[(homedf['teamName'] == hteamName) & (homedf['type'] == 'Goal') & (homedf['qualifiers'].str.contains('OwnGoal'))])
-                
-                df_teamNameId = pd.read_csv("teams_name_and_id.csv")
-                hftmb_tid = df_teamNameId[df_teamNameId['teamName'] == hteamName]['teamId'].iloc[0] if not df_teamNameId[df_teamNameId['teamName'] == hteamName].empty else 0
-                aftmb_tid = df_teamNameId[df_teamNameId['teamName'] == ateamName]['teamId'].iloc[0] if not df_teamNameId[df_teamNameId['teamName'] == ateamName].empty else 0
-                
-                st.header(f'{hteamName} {hgoal_count} - {agoal_count} {ateamName}')
-                
-                # دالة شبكة التمريرات
-                def pass_network(ax, team_name, col, phase_tag):
-                    if phase_tag == 'Full Time':
-                        df_pass = df.copy()
-                        df_pass = df_pass.reset_index(drop=True)
-                    elif phase_tag == 'First Half':
-                        df_pass = df[df['period'] == 'FirstHalf']
-                        df_pass = df_pass.reset_index(drop=True)
-                    elif phase_tag == 'Second Half':
-                        df_pass = df[df['period'] == 'SecondHalf']
-                        df_pass = df_pass.reset_index(drop=True)
-                    total_pass = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'] == 'Pass')]
-                    accrt_pass = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful')]
-                    accuracy = round((len(accrt_pass) / len(total_pass)) * 100, 2) if len(total_pass) != 0 else 0
-                    df_pass['pass_receiver'] = df_pass.loc[(df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful') & (df_pass['teamName'].shift(-1) == team_name), 'name'].shift(-1)
-                    df_pass['pass_receiver'] = df_pass['pass_receiver'].fillna('No')
-                    off_acts_df = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'].isin(['Pass', 'Goal', 'MissedShots', 'SavedShot', 'ShotOnPost', 'TakeOn', 'BallTouch', 'KeeperPickup']))]
-                    off_acts_df = off_acts_df[['name', 'x', 'y']].reset_index(drop=True)
-                    avg_locs_df = off_acts_df.groupby('name').agg(avg_x=('x', 'median'), avg_y=('y', 'median')).reset_index()
-                    team_pdf = players_df[['name', 'shirtNo', 'position', 'isFirstEleven']]
-                    avg_locs_df = avg_locs_df.merge(team_pdf, on='name', how='left')
-                    df_pass = df_pass[(df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful') & (df_pass['teamName'] == team_name) & (~df_pass['qualifiers'].str.contains('Corner|Freekick'))]
-                    df_pass = df_pass[['type', 'name', 'pass_receiver']].reset_index(drop=True)
-                    pass_count_df = df_pass.groupby(['name', 'pass_receiver']).size().reset_index(name='pass_count').sort_values(by='pass_count', ascending=False)
-                    pass_count_df = pass_count_df.reset_index(drop=True)
-                    pass_counts_df = pd.merge(pass_count_df, avg_locs_df, on='name', how='left')
-                    pass_counts_df.rename(columns={'avg_x': 'pass_avg_x', 'avg_y': 'pass_avg_y'}, inplace=True)
-                    pass_counts_df = pd.merge(pass_counts_df, avg_locs_df, left_on='pass_receiver', right_on='name', how='left', suffixes=('', '_receiver'))
-                    pass_counts_df.drop(columns=['name_receiver'], inplace=True)
-                    pass_counts_df.rename(columns={'avg_x': 'receiver_avg_x', 'avg_y': 'receiver_avg_y'}, inplace=True)
-                    pass_counts_df = pass_counts_df.sort_values(by='pass_count', ascending=False).reset_index(drop=True)
-                    pass_counts_df = pass_counts_df.dropna(subset=['shirtNo_receiver'])
-                    pass_btn = pass_counts_df[['name', 'shirtNo', 'pass_receiver', 'shirtNo_receiver', 'pass_count']]
-                    pass_btn['shirtNo_receiver'] = pass_btn['shirtNo_receiver'].astype(float).astype(int)
-                    MAX_LINE_WIDTH = 8
-                    MIN_LINE_WIDTH = 0.5
-                    MIN_TRANSPARENCY = 0.2
-                    MAX_TRANSPARENCY = 0.9
-                    pass_counts_df['line_width'] = (pass_counts_df['pass_count'] / pass_counts_df['pass_count'].max()) * (MAX_LINE_WIDTH - MIN_LINE_WIDTH) + MIN_LINE_WIDTH
-                    c_transparency = pass_counts_df['pass_count'] / pass_counts_df['pass_count'].max()
-                    c_transparency = (c_transparency * (MAX_TRANSPARENCY - MIN_TRANSPARENCY)) + MIN_TRANSPARENCY
-                    color = np.array(to_rgba(col))
-                    color = np.tile(color, (len(pass_counts_df), 1))
-                    color[:, 3] = c_transparency
-                    pitch = VerticalPitch(pitch_type='uefa', corner_arcs=True, linewidth=1.5, line_color=line_color)
-                    pitch.draw(ax=ax)
-                    gradient = LinearSegmentedColormap.from_list("pitch_gradient", gradient_colors, N=100)
-                    x = np.linspace(0, 1, 100)
-                    y = np.linspace(0, 1, 100)
-                    X, Y = np.meshgrid(x, y)
-                    Z = Y
-                    ax.imshow(Z, extent=[0, 68, 0, 105], cmap=gradient, alpha=0.8, aspect='auto', zorder=0)
-                    pitch.draw(ax=ax)
-                    for idx in range(len(pass_counts_df)):
-                        pitch.lines(
-                            pass_counts_df['pass_avg_x'].iloc[idx],
-                            pass_counts_df['pass_avg_y'].iloc[idx],
-                            pass_counts_df['receiver_avg_x'].iloc[idx],
-                            pass_counts_df['receiver_avg_y'].iloc[idx],
-                            lw=pass_counts_df['line_width'].iloc[idx],
-                            color=color[idx],
-                            zorder=1,
-                            ax=ax
-                        )
-                    for index, row in avg_locs_df.iterrows():
-                        if row['isFirstEleven'] == True:
-                            pitch.scatter(row['avg_x'], row['avg_y'], s=800, marker='o', color=col, edgecolor=line_color, linewidth=1.5, alpha=0.9, ax=ax)
-                        else:
-                            pitch.scatter(row['avg_x'], row['avg_y'], s=800, marker='s', color=col, edgecolor=line_color, linewidth=1.5, alpha=0.7, ax=ax)
-                    for index, row in avg_locs_df.iterrows():
-                        player_initials = row["shirtNo"]
-                        pitch.annotate(player_initials, xy=(row.avg_x, row.avg_y), c='white', ha='center', va='center', size=14, weight='bold', ax=ax)
-                    avgph = round(avg_locs_df['avg_x'].median(), 2)
-                    ax.axhline(y=avgph, color='white', linestyle='--', alpha=0.5, linewidth=1.5)
-                    center_backs_height = avg_locs_df[avg_locs_df['position'] == 'DC']
-                    def_line_h = round(center_backs_height['avg_x'].median(), 2) if not center_backs_height.empty else avgph
-                    Forwards_height = avg_locs_df[avg_locs_df['isFirstEleven'] == True].sort_values(by='avg_x', ascending=False).head(2)
-                    fwd_line_h = round(Forwards_height['avg_x'].mean(), 2) if not Forwards_height.empty else avgph
-                    ymid = [0, 0, 68, 68]
-                    xmid = [def_line_h, fwd_line_h, fwd_line_h, def_line_h]
-                    ax.fill(ymid, xmid, col, alpha=0.2)
-                    v_comp = round((1 - ((fwd_line_h - def_line_h) / 105)) * 100, 2)
-                    if phase_tag == 'Full Time':
-                        ax.text(34, 115, reshape_arabic_text('الوقت بالكامل: 0-90 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
-                        ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
-                    elif phase_tag == 'First Half':
-                        ax.text(34, 115, reshape_arabic_text('الشوط الأول: 0-45 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
-                        ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
-                    elif phase_tag == 'Second Half':
-                        ax.text(34, 115, reshape_arabic_text('الشوط الثاني: 45-90 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
-                        ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
-                    ax.text(34, -6, reshape_arabic_text(f"على الكرة\nالتماسك العمودي (المنطقة المظللة): {v_comp}%"), color='white', fontsize=12, ha='center', va='center', weight='bold')
-                    return pass_btn
-                
-                # علامات التبويب
-                tab1, tab2, tab3, tab4 = st.tabs(['تحليل الفريق', 'تحليل اللاعبين', 'إحصائيات المباراة', 'أفضل اللاعبين'])
-                
-                with tab1:
-                    an_tp = st.selectbox('نوع التحليل:', [
-                        'شبكة التمريرات',
-                        'Defensive Actions Heatmap',
-                        'Progressive Passes',
-                        'Progressive Carries',
-                        'Shotmap',
-                        'إحصائيات الحراس',
-                        'Match Momentum',
-                        reshape_arabic_text('Zone14 & Half-Space Passes'),
-                        reshape_arabic_text('Final Third Entries'),
-                        reshape_arabic_text('Box Entries'),
-                        reshape_arabic_text('High-Turnovers'),
-                        reshape_arabic_text('Chances Creating Zones'),
-                        reshape_arabic_text('Crosses'),
-                        reshape_arabic_text('Team Domination Zones'),
-                        reshape_arabic_text('Pass Target Zones'),
-                        'Attacking Thirds'
-                    ], index=0, key='analysis_type')
-                    
-                    if an_tp == 'شبكة التمريرات':
-                        st.subheader('شبكة التمريرات')
-                        team_choice = st.selectbox('اختر الفريق:', [hteamName, ateamName], key='team_choice')
-                        phase_tag = st.selectbox('اختر الفترة:', ['Full Time', 'First Half', 'Second Half'], key='phase_tag')
-                        fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                        col = hcol if team_choice == hteamName else acol
-                        pass_btn = pass_network(ax, team_choice, col, phase_tag)
-                        st.pyplot(fig)
-                        st.dataframe(pass_btn, hide_index=True)
-                
-                with tab2:
-                    st.write("تحليل اللاعبين قيد التطوير...")
-                
-                with tab3:
-                    st.write("إحصائيات المباراة قيد التطوير...")
-                
-                with tab4:
-                    top_type = st.selectbox('اختر النوع:', [
-                        'Top Ball Progressors',
-                        'Top Shot Sequences Involvements',
-                        'Top Defensive Involvements',
-                        'Top Ball Recoverers',
-                        'Top Threat Creating Players'
-                    ], index=None, key='top_players_selection')
-                    if top_type:
-                        def top_dfs():
-                            unique_players = df['name'].unique()
-                            progressor_counts = {'name': unique_players, 'Progressive Passes': [], 'Progressive Carries': [], 'team names': []}
-                            for name in unique_players:
-                                dfp = df[(df['name'] == name) & (df['outcomeType'] == 'Successful')]
-                                progressor_counts['Progressive Passes'].append(len(dfp[(dfp['prog_pass'] >= 9.144) & (dfp['x'] >= 35) & (~dfp['qualifiers'].str.contains('CornerTaken|Freekick'))]))
-                                progressor_counts['Progressive Carries'].append(len(dfp[(dfp['prog_carry'] >= 9.144) & (dfp['endX'] >= 35)]))
-                                progressor_counts['team names'].append(dfp['teamName'].max())
-                            progressor_df = pd.DataFrame(progressor_counts)
-                            progressor_df['total'] = progressor_df['Progressive Passes'] + progressor_df['Progressive Carries']
-                            progressor_df = progressor_df.sort_values(by=['total', 'Progressive Passes'], ascending=[False, False])
-                            progressor_df = progressor_df.head(10)
-                            progressor_df['shortName'] = progressor_df['name'].apply(get_short_name)
-                            
-                            xT_counts = {'name': unique_players, 'xT from Pass': [], 'xT from Carry': [], 'team names': []}
-                            for name in unique_players:
-                                dfp = df[(df['name'] == name) & (df['outcomeType'] == 'Successful') & (df['xT'] > 0)]
-                                xT_counts['xT from Pass'].append((dfp[(dfp['type'] == 'Pass') & (~dfp['qualifiers'].str.contains('CornerTaken|Freekick|ThrowIn'))])['xT'].sum().round(2))
-                                xT_counts['xT from Carry'].append((dfp[(dfp['type'] == 'Carry')])['xT'].sum().round(2))
-                                xT_counts['team names'].append(dfp['teamName'].max())
-                            xT_df = pd.DataFrame(xT_counts)
-                            xT_df['total'] = xT_df['xT from Pass'] + xT_df['xT from Carry']
-                            xT_df = xT_df.sort_values(by=['total', 'xT from Pass'], ascending=[False, False])
-                            xT_df = xT_df.head(10)
-                            xT_df['shortName'] = xT_df['name'].apply(get_short_name)
-                            
-                            df_no_carry = df[~df['type'].str.contains('Carry|TakeOn|Challenge')].reset_index(drop=True)
-                            shot_seq_counts = {'name': unique_players, 'Shots': [], 'Shot Assists': [], 'Buildup to Shot': [], 'team names': []}
-                            for name in unique_players:
-                                dfp = df_no_carry[df_no_carry['name'] == name]
-                                shot_seq_counts['Shots'].append(len(dfp[dfp['type'].isin(['MissedShots', 'SavedShot', 'ShotOnPost', 'Goal'])]))
-                                shot_seq_counts['Shot Assists'].append(len(dfp[(dfp['qualifiers'].str.contains('KeyPass'))]))
-                                shot_seq_counts['Buildup to Shot'].append(len(df_no_carry[(df_no_carry['type'] == 'Pass') & 
-                                                                                         (df_no_carry['outcomeType'] == 'Successful') & 
-                                                                                         (df_no_carry['name'] == name) & 
-                                                                                         (df_no_carry['qualifiers'].shift(-1).str.contains('KeyPass'))]))
-                                shot_seq_counts['team names'].append(dfp['teamName'].max())
-                            sh_sq_df = pd.DataFrame(shot_seq_counts)
-                            sh_sq_df['total'] = sh_sq_df['Shots'] + sh_sq_df['Shot Assists'] + sh_sq_df['Buildup to Shot']
-                            sh_sq_df = sh_sq_df.sort_values(by=['total', 'Shots', 'Shot Assists'], ascending=[False, False, False])
-                            sh_sq_df = sh_sq_df.head(10)
-                            sh_sq_df['shortName'] = sh_sq_df['name'].apply(get_short_name)
-                            
-                            defensive_actions_counts = {'name': unique_players, 'Tackles': [], 'Interceptions': [], 'Clearance': [], 'team names': []}
-                            for name in unique_players:
-                                dfp = df[(df['name'] == name) & (df['outcomeType'] == 'Successful')]
-                                defensive_actions_counts['Tackles'].append(len(dfp[dfp['type'] == 'Tackle']))
-                                defensive_actions_counts['Interceptions'].append(len(dfp[dfp['type'] == 'Interception']))
-                                defensive_actions_counts['Clearance'].append(len(dfp[dfp['type'] == 'Clearance']))
-                                defensive_actions_counts['team names'].append(dfp['teamName'].max())
-                            defender_df = pd.DataFrame(defensive_actions_counts)
-                            defender_df['total'] = defender_df['Tackles'] + defender_df['Interceptions'] + defender_df['Clearance']
-                            defender_df = defender_df.sort_values(by=['total', 'Tackles', 'Interceptions'], ascending=[False, False, False])
-                            defender_df = defender_df.head(10)
-                            defender_df['shortName'] = defender_df['name'].apply(get_short_name)
-                            
-                            recovery_counts = {'name': unique_players, 'Ball Recoveries': [], 'team names': []}
-                            for name in unique_players:
-                                dfp = df[(df['name'] == name) & (df['outcomeType'] == 'Successful')]
-                                recovery_counts['Ball Recoveries'].append(len(dfp[dfp['type'] == 'BallRecovery']))
-                                recovery_counts['team names'].append(dfp['teamName'].max())
-                            recovery_df = pd.DataFrame(recovery_counts)
-                            recovery_df['total'] = recovery_df['Ball Recoveries']
-                            recovery_df = recovery_df.sort_values(by=['total'], ascending=False)
-                            recovery_df = recovery_df.head(10)
-                            recovery_df['shortName'] = recovery_df['name'].apply(get_short_name)
-                            
-                            return progressor_df, xT_df, sh_sq_df, defender_df, recovery_df
-                        
-                        progressor_df, xT_df, sh_sq_df, defender_df, recovery_df = top_dfs()
-                        
-                        def passer_bar(ax):
-                            top10_progressors = progressor_df['shortName'][::-1].tolist()
-                            progressor_pp = progressor_df['Progressive Passes'][::-1].tolist()
-                            progressor_pc = progressor_df['Progressive Carries'][::-1].tolist()
-                            ax.barh(top10_progressors, progressor_pp, label='Prog. Pass', zorder=3, color=hcol, left=0)
-                            ax.barh(top10_progressors, progressor_pc, label='Prog. Carry', zorder=3, color=acol, left=progressor_pp)
-                            for i, player in enumerate(top10_progressors):
-                                for j, count in enumerate([progressor_pp[i], progressor_pc[i]]):
-                                    if count > 0:
-                                        x_position = sum([progressor_pp[i], progressor_pc[i]][:j]) + count / 2
-                                        ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
-                                ax.text(progressor_df['total'].iloc[i] + 0.25, 9-i, str(progressor_df['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
-                            ax.set_facecolor(bg_color)
-                            ax.tick_params(axis='x', colors=line_color, labelsize=8)
-                            ax.tick_params(axis='y', colors=line_color, labelsize=10)
-                            ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
-                            ax.spines['top'].set_visible(False)
-                            ax.spines['right'].set_visible(False)
-                            ax.spines['bottom'].set_visible(True)
-                            ax.spines['left'].set_visible(True)
-                            ax.legend(fontsize=8, loc='lower right')
-                            return
-                        
-                        def sh_sq_bar(ax):
-                            top10 = sh_sq_df.head(10).iloc[::-1]
-                            ax.barh(top10['shortName'], top10['Shots'], zorder=3, height=0.75, label='Shot', color=hcol)
-                            ax.barh(top10['shortName'], top10['Shot Assists'], zorder=3, height=0.75, label='Shot Assist', color='green', left=top10['Shots'])
-                            ax.barh(top10['shortName'], top10['Buildup to Shot'], zorder=3, height=0.75, label='Buildup to Shot', color=acol, left=top10[['Shots', 'Shot Assists']].sum(axis=1))
-                            for i, player in enumerate(top10['shortName']):
-                                for j, count in enumerate(top10[['Shots', 'Shot Assists', 'Buildup to Shot']].iloc[i]):
-                                    if count > 0:
-                                        x_position = sum(top10.iloc[i, 1:1+j]) + count / 2
-                                        ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
-                                ax.text(top10['total'].iloc[i] + 0.25, i, str(top10['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
-                            ax.set_facecolor(bg_color)
-                            ax.tick_params(axis='x', colors=line_color, labelsize=8)
-                            ax.tick_params(axis='y', colors=line_color, labelsize=10)
-                            ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
-                            ax.spines['top'].set_visible(False)
-                            ax.spines['right'].set_visible(False)
-                            ax.spines['bottom'].set_visible(True)
-                            ax.spines['left'].set_visible(True)
-                            ax.legend(fontsize=8, loc='lower right')
-                            return
-                        
-                        def top_defender(ax):
-                            top10 = defender_df.head(10).iloc[::-1]
-                            ax.barh(top10['shortName'], top10['Tackles'], zorder=3, height=0.75, label='Tackle', color=hcol)
-                            ax.barh(top10['shortName'], top10['Interceptions'], zorder=3, height=0.75, label='Interception', color='green', left=top10['Tackles'])
-                            ax.barh(top10['shortName'], top10['Clearance'], zorder=3, height=0.75, label='Clearance', color=acol, left=top10[['Tackles', 'Interceptions']].sum(axis=1))
-                            for i, player in enumerate(top10['shortName']):
-                                for j, count in enumerate(top10[['Tackles', 'Interceptions', 'Clearance']].iloc[i]):
-                                    if count > 0:
-                                        x_position = sum(top10.iloc[i, 1:1+j]) + count / 2
-                                        ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
-                                ax.text(top10['total'].iloc[i] + 0.25, i, str(top10['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
-                            ax.set_facecolor(bg_color)
-                            ax.tick_params(axis='x', colors=line_color, labelsize=8)
-                            ax.tick_params(axis='y', colors=line_color, labelsize=10)
-                            ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
-                            ax.spines['top'].set_visible(False)
-                            ax.spines['right'].set_visible(False)
-                            ax.spines['bottom'].set_visible(True)
-                            ax.spines['left'].set_visible(True)
-                            ax.legend(fontsize=8, loc='lower right')
-                            return
-                        
-                        def xT_bar(ax):
-                            top10_progressors = xT_df['shortName'][::-1].tolist()
-                            progressor_pp = xT_df['xT from Pass'][::-1].tolist()
-                            progressor_pc = xT_df['xT from Carry'][::-1].tolist()
-                            total_rounded = xT_df['total'].round(2)[::-1].tolist()
-                            ax.barh(top10_progressors, progressor_pp, label='xT from Pass', zorder=3, color=hcol, left=0)
-                            ax.barh(top10_progressors, progressor_pc, label='xT from Carry', zorder=3, color=acol, left=progressor_pp)
-                            for i, player in enumerate(top10_progressors):
-                                for j, count in enumerate([progressor_pp[i], progressor_pc[i]]):
-                                    if count > 0:
-                                        x_position = sum([progressor_pp[i], progressor_pc[i]][:j]) + count / 2
-                                        ax.text(x_position, i, f"{count:.2f}", ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
-                                ax.text(xT_df['total'].iloc[i] + 0.01, 9-i, f"{total_rounded[i]:.2f}", ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
-                            ax.set_facecolor(bg_color)
-                            ax.tick_params(axis='x', colors=line_color, labelsize=8)
-                            ax.tick_params(axis='y', colors=line_color, labelsize=10)
-                            ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
-                            ax.spines['top'].set_visible(False)
-                            ax.spines['right'].set_visible(False)
-                            ax.spines['bottom'].set_visible(True)
-                            ax.spines['left'].set_visible(True)
-                            ax.legend(fontsize=8, loc='lower right')
-                            return
-                        
-                        def ball_recoverers_bar(ax):
-                            top10 = recovery_df.head(10).iloc[::-1]
-                            ax.barh(top10['shortName'], top10['Ball Recoveries'], zorder=3, height=0.75, label='Ball Recoveries', color=hcol)
-                            for i, player in enumerate(top10['shortName']):
-                                count = top10['Ball Recoveries'].iloc[i]
-                                if count > 0:
-                                    ax.text(count / 2, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
-                                ax.text(count + 0.25, i, str(count), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
-                            ax.set_facecolor(bg_color)
-                            ax.tick_params(axis='x', colors=line_color, labelsize=8)
-                            ax.tick_params(axis='y', colors=line_color, labelsize=10)
-                            ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
-                            ax.spines['top'].set_visible(False)
-                            ax.spines['right'].set_visible(False)
-                            ax.spines['bottom'].set_visible(True)
-                            ax.spines['left'].set_visible(True)
-                            ax.legend(fontsize=8, loc='lower right')
-                            return
-                        
-                        if top_type == 'Top Ball Progressors':
-                            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                            passer_bar(ax)
-                            fig.text(0.5, 1.02, 'Top Ball Progressors', fontsize=12, fontweight='bold', ha='center', va='center')
-                            fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
-                            st.pyplot(fig)
-                        elif top_type == 'Top Shot Sequences Involvements':
-                            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                            sh_sq_bar(ax)
-                            fig.text(0.5, 1.02, 'Top Shot Sequence Involvements', fontsize=12, fontweight='bold', ha='center', va='center')
-                            fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
-                            st.pyplot(fig)
-                        elif top_type == 'Top Defensive Involvements':
-                            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                            top_defender(ax)
-                            fig.text(0.5, 1.02, 'Top Defensive Involvements', fontsize=12, fontweight='bold', ha='center', va='center')
-                            fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
-                            st.pyplot(fig)
-                        elif top_type == 'Top Threat Creating Players':
-                            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                            xT_bar(ax)
-                            fig.text(0.5, 1.02, 'Top Threat Creating Players', fontsize=12, fontweight='bold', ha='center', va='center')
-                            fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
-                            st.pyplot(fig)
-                        elif top_type == 'Top Ball Recoverers':
-                            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
-                            ball_recoverers_bar(ax)
-                            fig.text(0.5, 1.02, 'Top Ball Recoverers', fontsize=12, fontweight='bold', ha='center', va='center')
-                            fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
-                            st.pyplot(fig)
+        if st.session_state.json_data:
+            st.session_state.df, st.session_state.teams_dict, st.session_state.players_df = get_event_data(st.session_state.json_data)
+            st.session_state.analysis_triggered = True
+            if st.session_state.df is not None and st.session_state.teams_dict and st.session_state.players_df is not None:
+                st.success("تم استخراج البيانات بنجاح!")
             else:
                 st.error("فشل في معالجة البيانات.")
         else:
             st.error("فشل في جلب بيانات المباراة.")
+
+# عرض التحليل فقط إذا تم استخراج البيانات
+if st.session_state.analysis_triggered and st.session_state.df is not None and st.session_state.teams_dict and st.session_state.players_df is not None:
+    hteamID = list(st.session_state.teams_dict.keys())[0]
+    ateamID = list(st.session_state.teams_dict.keys())[1]
+    hteamName = st.session_state.teams_dict[hteamID]
+    ateamName = st.session_state.teams_dict[ateamID]
+    
+    homedf = st.session_state.df[(st.session_state.df['teamName'] == hteamName)]
+    awaydf = st.session_state.df[(st.session_state.df['teamName'] == ateamName)]
+    hxT = homedf['xT'].sum().round(2)
+    axT = awaydf['xT'].sum().round(2)
+    
+    hgoal_count = len(homedf[(homedf['teamName'] == hteamName) & (homedf['type'] == 'Goal') & (~homedf['qualifiers'].str.contains('OwnGoal'))])
+    agoal_count = len(awaydf[(awaydf['teamName'] == ateamName) & (awaydf['type'] == 'Goal') & (~awaydf['qualifiers'].str.contains('OwnGoal'))])
+    hgoal_count += len(awaydf[(awaydf['teamName'] == ateamName) & (awaydf['type'] == 'Goal') & (awaydf['qualifiers'].str.contains('OwnGoal'))])
+    agoal_count += len(homedf[(homedf['teamName'] == hteamName) & (homedf['type'] == 'Goal') & (homedf['qualifiers'].str.contains('OwnGoal'))])
+    
+    df_teamNameId = pd.read_csv("teams_name_and_id.csv")
+    hftmb_tid = df_teamNameId[df_teamNameId['teamName'] == hteamName]['teamId'].iloc[0] if not df_teamNameId[df_teamNameId['teamName'] == hteamName].empty else 0
+    aftmb_tid = df_teamNameId[df_teamNameId['teamName'] == ateamName]['teamId'].iloc[0] if not df_teamNameId[df_teamNameId['teamName'] == ateamName].empty else 0
+    
+    st.header(f'{hteamName} {hgoal_count} - {agoal_count} {ateamName}')
+    
+    # دالة شبكة التمريرات
+    def pass_network(ax, team_name, col, phase_tag):
+        if phase_tag == 'Full Time':
+            df_pass = st.session_state.df.copy()
+            df_pass = df_pass.reset_index(drop=True)
+        elif phase_tag == 'First Half':
+            df_pass = st.session_state.df[st.session_state.df['period'] == 'FirstHalf']
+            df_pass = df_pass.reset_index(drop=True)
+        elif phase_tag == 'Second Half':
+            df_pass = st.session_state.df[st.session_state.df['period'] == 'SecondHalf']
+            df_pass = df_pass.reset_index(drop=True)
+        total_pass = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'] == 'Pass')]
+        accrt_pass = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful')]
+        accuracy = round((len(accrt_pass) / len(total_pass)) * 100, 2) if len(total_pass) != 0 else 0
+        df_pass['pass_receiver'] = df_pass.loc[(df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful') & (df_pass['teamName'].shift(-1) == team_name), 'name'].shift(-1)
+        df_pass['pass_receiver'] = df_pass['pass_receiver'].fillna('No')
+        off_acts_df = df_pass[(df_pass['teamName'] == team_name) & (df_pass['type'].isin(['Pass', 'Goal', 'MissedShots', 'SavedShot', 'ShotOnPost', 'TakeOn', 'BallTouch', 'KeeperPickup']))]
+        off_acts_df = off_acts_df[['name', 'x', 'y']].reset_index(drop=True)
+        avg_locs_df = off_acts_df.groupby('name').agg(avg_x=('x', 'median'), avg_y=('y', 'median')).reset_index()
+        team_pdf = st.session_state.players_df[['name', 'shirtNo', 'position', 'isFirstEleven']]
+        avg_locs_df = avg_locs_df.merge(team_pdf, on='name', how='left')
+        df_pass = df_pass[(df_pass['type'] == 'Pass') & (df_pass['outcomeType'] == 'Successful') & (df_pass['teamName'] == team_name) & (~df_pass['qualifiers'].str.contains('Corner|Freekick'))]
+        df_pass = df_pass[['type', 'name', 'pass_receiver']].reset_index(drop=True)
+        pass_count_df = df_pass.groupby(['name', 'pass_receiver']).size().reset_index(name='pass_count').sort_values(by='pass_count', ascending=False)
+        pass_count_df = pass_count_df.reset_index(drop=True)
+        pass_counts_df = pd.merge(pass_count_df, avg_locs_df, on='name', how='left')
+        pass_counts_df.rename(columns={'avg_x': 'pass_avg_x', 'avg_y': 'pass_avg_y'}, inplace=True)
+        pass_counts_df = pd.merge(pass_counts_df, avg_locs_df, left_on='pass_receiver', right_on='name', how='left', suffixes=('', '_receiver'))
+        pass_counts_df.drop(columns=['name_receiver'], inplace=True)
+        pass_counts_df.rename(columns={'avg_x': 'receiver_avg_x', 'avg_y': 'receiver_avg_y'}, inplace=True)
+        pass_counts_df = pass_counts_df.sort_values(by='pass_count', ascending=False).reset_index(drop=True)
+        pass_counts_df = pass_counts_df.dropna(subset=['shirtNo_receiver'])
+        pass_btn = pass_counts_df[['name', 'shirtNo', 'pass_receiver', 'shirtNo_receiver', 'pass_count']]
+        pass_btn['shirtNo_receiver'] = pass_btn['shirtNo_receiver'].astype(float).astype(int)
+        MAX_LINE_WIDTH = 8
+        MIN_LINE_WIDTH = 0.5
+        MIN_TRANSPARENCY = 0.2
+        MAX_TRANSPARENCY = 0.9
+        pass_counts_df['line_width'] = (pass_counts_df['pass_count'] / pass_counts_df['pass_count'].max()) * (MAX_LINE_WIDTH - MIN_LINE_WIDTH) + MIN_LINE_WIDTH
+        c_transparency = pass_counts_df['pass_count'] / pass_counts_df['pass_count'].max()
+        c_transparency = (c_transparency * (MAX_TRANSPARENCY - MIN_TRANSPARENCY)) + MIN_TRANSPARENCY
+        color = np.array(to_rgba(col))
+        color = np.tile(color, (len(pass_counts_df), 1))
+        color[:, 3] = c_transparency
+        pitch = VerticalPitch(pitch_type='uefa', corner_arcs=True, linewidth=1.5, line_color=line_color)
+        pitch.draw(ax=ax)
+        gradient = LinearSegmentedColormap.from_list("pitch_gradient", gradient_colors, N=100)
+        x = np.linspace(0, 1, 100)
+        y = np.linspace(0, 1, 100)
+        X, Y = np.meshgrid(x, y)
+        Z = Y
+        ax.imshow(Z, extent=[0, 68, 0, 105], cmap=gradient, alpha=0.8, aspect='auto', zorder=0)
+        pitch.draw(ax=ax)
+        for idx in range(len(pass_counts_df)):
+            pitch.lines(
+                pass_counts_df['pass_avg_x'].iloc[idx],
+                pass_counts_df['pass_avg_y'].iloc[idx],
+                pass_counts_df['receiver_avg_x'].iloc[idx],
+                pass_counts_df['receiver_avg_y'].iloc[idx],
+                lw=pass_counts_df['line_width'].iloc[idx],
+                color=color[idx],
+                zorder=1,
+                ax=ax
+            )
+        for index, row in avg_locs_df.iterrows():
+            if row['isFirstEleven'] == True:
+                pitch.scatter(row['avg_x'], row['avg_y'], s=800, marker='o', color=col, edgecolor=line_color, linewidth=1.5, alpha=0.9, ax=ax)
+            else:
+                pitch.scatter(row['avg_x'], row['avg_y'], s=800, marker='s', color=col, edgecolor=line_color, linewidth=1.5, alpha=0.7, ax=ax)
+        for index, row in avg_locs_df.iterrows():
+            player_initials = row["shirtNo"]
+            pitch.annotate(player_initials, xy=(row.avg_x, row.avg_y), c='white', ha='center', va='center', size=14, weight='bold', ax=ax)
+        avgph = round(avg_locs_df['avg_x'].median(), 2)
+        ax.axhline(y=avgph, color='white', linestyle='--', alpha=0.5, linewidth=1.5)
+        center_backs_height = avg_locs_df[avg_locs_df['position'] == 'DC']
+        def_line_h = round(center_backs_height['avg_x'].median(), 2) if not center_backs_height.empty else avgph
+        Forwards_height = avg_locs_df[avg_locs_df['isFirstEleven'] == True].sort_values(by='avg_x', ascending=False).head(2)
+        fwd_line_h = round(Forwards_height['avg_x'].mean(), 2) if not Forwards_height.empty else avgph
+        ymid = [0, 0, 68, 68]
+        xmid = [def_line_h, fwd_line_h, fwd_line_h, def_line_h]
+        ax.fill(ymid, xmid, col, alpha=0.2)
+        v_comp = round((1 - ((fwd_line_h - def_line_h) / 105)) * 100, 2)
+        if phase_tag == 'Full Time':
+            ax.text(34, 115, reshape_arabic_text('الوقت بالكامل: 0-90 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
+            ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
+        elif phase_tag == 'First Half':
+            ax.text(34, 115, reshape_arabic_text('الشوط الأول: 0-45 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
+            ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
+        elif phase_tag == 'Second Half':
+            ax.text(34, 115, reshape_arabic_text('الشوط الثاني: 45-90 دقيقة'), color='white', fontsize=14, ha='center', va='center', weight='bold')
+            ax.text(34, 112, reshape_arabic_text(f'إجمالي التمريرات: {len(total_pass)} | الناجحة: {len(accrt_pass)} | الدقة: {accuracy}%'), color='white', fontsize=12, ha='center', va='center')
+        ax.text(34, -6, reshape_arabic_text(f"على الكرة\nالتماسك العمودي (المنطقة المظللة): {v_comp}%"), color='white', fontsize=12, ha='center', va='center', weight='bold')
+        return pass_btn
+    
+    # علامات التبويب
+    tab1, tab2, tab3, tab4 = st.tabs(['تحليل الفريق', 'تحليل اللاعبين', 'إحصائيات المباراة', 'أفضل اللاعبين'])
+    
+    with tab1:
+        an_tp = st.selectbox('نوع التحليل:', [
+            'شبكة التمريرات',
+            'Defensive Actions Heatmap',
+            'Progressive Passes',
+            'Progressive Carries',
+            'Shotmap',
+            'إحصائيات الحراس',
+            'Match Momentum',
+            reshape_arabic_text('Zone14 & Half-Space Passes'),
+            reshape_arabic_text('Final Third Entries'),
+            reshape_arabic_text('Box Entries'),
+            reshape_arabic_text('High-Turnovers'),
+            reshape_arabic_text('Chances Creating Zones'),
+            reshape_arabic_text('Crosses'),
+            reshape_arabic_text('Team Domination Zones'),
+            reshape_arabic_text('Pass Target Zones'),
+            'Attacking Thirds'
+        ], index=0, key='analysis_type')
+        
+        if an_tp == 'شبكة التمريرات':
+            st.subheader('شبكة التمريرات')
+            team_choice = st.selectbox('اختر الفريق:', [hteamName, ateamName], key='team_choice')
+            phase_tag = st.selectbox('اختر الفترة:', ['Full Time', 'First Half', 'Second Half'], key='phase_tag')
+            fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+            col = hcol if team_choice == hteamName else acol
+            pass_btn = pass_network(ax, team_choice, col, phase_tag)
+            st.pyplot(fig)
+            st.dataframe(pass_btn, hide_index=True)
+    
+    with tab2:
+        st.write("تحليل اللاعبين قيد التطوير...")
+    
+    with tab3:
+        st.write("إحصائيات المباراة قيد التطوير...")
+    
+    with tab4:
+        top_type = st.selectbox('اختر النوع:', [
+            'Top Ball Progressors',
+            'Top Shot Sequences Involvements',
+            'Top Defensive Involvements',
+            'Top Ball Recoverers',
+            'Top Threat Creating Players'
+        ], index=None, key='top_players_selection')
+        if top_type:
+            def top_dfs():
+                unique_players = st.session_state.df['name'].unique()
+                progressor_counts = {'name': unique_players, 'Progressive Passes': [], 'Progressive Carries': [], 'team names': []}
+                for name in unique_players:
+                    dfp = st.session_state.df[(st.session_state.df['name'] == name) & (st.session_state.df['outcomeType'] == 'Successful')]
+                    progressor_counts['Progressive Passes'].append(len(dfp[(dfp['prog_pass'] >= 9.144) & (dfp['x'] >= 35) & (~dfp['qualifiers'].str.contains('CornerTaken|Freekick'))]))
+                    progressor_counts['Progressive Carries'].append(len(dfp[(dfp['prog_carry'] >= 9.144) & (dfp['endX'] >= 35)]))
+                    progressor_counts['team names'].append(dfp['teamName'].max())
+                progressor_df = pd.DataFrame(progressor_counts)
+                progressor_df['total'] = progressor_df['Progressive Passes'] + progressor_df['Progressive Carries']
+                progressor_df = progressor_df.sort_values(by=['total', 'Progressive Passes'], ascending=[False, False])
+                progressor_df = progressor_df.head(10)
+                progressor_df['shortName'] = progressor_df['name'].apply(get_short_name)
+                
+                xT_counts = {'name': unique_players, 'xT from Pass': [], 'xT from Carry': [], 'team names': []}
+                for name in unique_players:
+                    dfp = st.session_state.df[(st.session_state.df['name'] == name) & (st.session_state.df['outcomeType'] == 'Successful') & (st.session_state.df['xT'] > 0)]
+                    xT_counts['xT from Pass'].append((dfp[(dfp['type'] == 'Pass') & (~dfp['qualifiers'].str.contains('CornerTaken|Freekick|ThrowIn'))])['xT'].sum().round(2))
+                    xT_counts['xT from Carry'].append((dfp[(dfp['type'] == 'Carry')])['xT'].sum().round(2))
+                    xT_counts['team names'].append(dfp['teamName'].max())
+                xT_df = pd.DataFrame(xT_counts)
+                xT_df['total'] = xT_df['xT from Pass'] + xT_df['xT from Carry']
+                xT_df = xT_df.sort_values(by=['total', 'xT from Pass'], ascending=[False, False])
+                xT_df = xT_df.head(10)
+                xT_df['shortName'] = xT_df['name'].apply(get_short_name)
+                
+                df_no_carry = st.session_state.df[~st.session_state.df['type'].str.contains('Carry|TakeOn|Challenge')].reset_index(drop=True)
+                shot_seq_counts = {'name': unique_players, 'Shots': [], 'Shot Assists': [], 'Buildup to Shot': [], 'team names': []}
+                for name in unique_players:
+                    dfp = df_no_carry[df_no_carry['name'] == name]
+                    shot_seq_counts['Shots'].append(len(dfp[dfp['type'].isin(['MissedShots', 'SavedShot', 'ShotOnPost', 'Goal'])]))
+                    shot_seq_counts['Shot Assists'].append(len(dfp[(dfp['qualifiers'].str.contains('KeyPass'))]))
+                    shot_seq_counts['Buildup to Shot'].append(len(df_no_carry[(df_no_carry['type'] == 'Pass') & 
+                                                                             (df_no_carry['outcomeType'] == 'Successful') & 
+                                                                             (df_no_carry['name'] == name) & 
+                                                                             (df_no_carry['qualifiers'].shift(-1).str.contains('KeyPass'))]))
+                    shot_seq_counts['team names'].append(dfp['teamName'].max())
+                sh_sq_df = pd.DataFrame(shot_seq_counts)
+                sh_sq_df['total'] = sh_sq_df['Shots'] + sh_sq_df['Shot Assists'] + sh_sq_df['Buildup to Shot']
+                sh_sq_df = sh_sq_df.sort_values(by=['total', 'Shots', 'Shot Assists'], ascending=[False, False, False])
+                sh_sq_df = sh_sq_df.head(10)
+                sh_sq_df['shortName'] = sh_sq_df['name'].apply(get_short_name)
+                
+                defensive_actions_counts = {'name': unique_players, 'Tackles': [], 'Interceptions': [], 'Clearance': [], 'team names': []}
+                for name in unique_players:
+                    dfp = st.session_state.df[(st.session_state.df['name'] == name) & (st.session_state.df['outcomeType'] == 'Successful')]
+                    defensive_actions_counts['Tackles'].append(len(dfp[dfp['type'] == 'Tackle']))
+                    defensive_actions_counts['Interceptions'].append(len(dfp[dfp['type'] == 'Interception']))
+                    defensive_actions_counts['Clearance'].append(len(dfp[dfp['type'] == 'Clearance']))
+                    defensive_actions_counts['team names'].append(dfp['teamName'].max())
+                defender_df = pd.DataFrame(defensive_actions_counts)
+                defender_df['total'] = defender_df['Tackles'] + defender_df['Interceptions'] + defender_df['Clearance']
+                defender_df = defender_df.sort_values(by=['total', 'Tackles', 'Interceptions'], ascending=[False, False, False])
+                defender_df = defender_df.head(10)
+                defender_df['shortName'] = defender_df['name'].apply(get_short_name)
+                
+                recovery_counts = {'name': unique_players, 'Ball Recoveries': [], 'team names': []}
+                for name in unique_players:
+                    dfp = st.session_state.df[(st.session_state.df['name'] == name) & (st.session_state.df['outcomeType'] == 'Successful')]
+                    recovery_counts['Ball Recoveries'].append(len(dfp[dfp['type'] == 'BallRecovery']))
+                    recovery_counts['team names'].append(dfp['teamName'].max())
+                recovery_df = pd.DataFrame(recovery_counts)
+                recovery_df['total'] = recovery_df['Ball Recoveries']
+                recovery_df = recovery_df.sort_values(by=['total'], ascending=False)
+                recovery_df = recovery_df.head(10)
+                recovery_df['shortName'] = recovery_df['name'].apply(get_short_name)
+                
+                return progressor_df, xT_df, sh_sq_df, defender_df, recovery_df
+            
+            progressor_df, xT_df, sh_sq_df, defender_df, recovery_df = top_dfs()
+            
+            def passer_bar(ax):
+                top10_progressors = progressor_df['shortName'][::-1].tolist()
+                progressor_pp = progressor_df['Progressive Passes'][::-1].tolist()
+                progressor_pc = progressor_df['Progressive Carries'][::-1].tolist()
+                ax.barh(top10_progressors, progressor_pp, label='Prog. Pass', zorder=3, color=hcol, left=0)
+                ax.barh(top10_progressors, progressor_pc, label='Prog. Carry', zorder=3, color=acol, left=progressor_pp)
+                for i, player in enumerate(top10_progressors):
+                    for j, count in enumerate([progressor_pp[i], progressor_pc[i]]):
+                        if count > 0:
+                            x_position = sum([progressor_pp[i], progressor_pc[i]][:j]) + count / 2
+                            ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
+                    ax.text(progressor_df['total'].iloc[i] + 0.25, 9-i, str(progressor_df['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
+                ax.set_facecolor(bg_color)
+                ax.tick_params(axis='x', colors=line_color, labelsize=8)
+                ax.tick_params(axis='y', colors=line_color, labelsize=10)
+                ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['left'].set_visible(True)
+                ax.legend(fontsize=8, loc='lower right')
+                return
+            
+            def sh_sq_bar(ax):
+                top10 = sh_sq_df.head(10).iloc[::-1]
+                ax.barh(top10['shortName'], top10['Shots'], zorder=3, height=0.75, label='Shot', color=hcol)
+                ax.barh(top10['shortName'], top10['Shot Assists'], zorder=3, height=0.75, label='Shot Assist', color='green', left=top10['Shots'])
+                ax.barh(top10['shortName'], top10['Buildup to Shot'], zorder=3, height=0.75, label='Buildup to Shot', color=acol, left=top10[['Shots', 'Shot Assists']].sum(axis=1))
+                for i, player in enumerate(top10['shortName']):
+                    for j, count in enumerate(top10[['Shots', 'Shot Assists', 'Buildup to Shot']].iloc[i]):
+                        if count > 0:
+                            x_position = sum(top10.iloc[i, 1:1+j]) + count / 2
+                            ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
+                    ax.text(top10['total'].iloc[i] + 0.25, i, str(top10['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
+                ax.set_facecolor(bg_color)
+                ax.tick_params(axis='x', colors=line_color, labelsize=8)
+                ax.tick_params(axis='y', colors=line_color, labelsize=10)
+                ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['left'].set_visible(True)
+                ax.legend(fontsize=8, loc='lower right')
+                return
+            
+            def top_defender(ax):
+                top10 = defender_df.head(10).iloc[::-1]
+                ax.barh(top10['shortName'], top10['Tackles'], zorder=3, height=0.75, label='Tackle', color=hcol)
+                ax.barh(top10['shortName'], top10['Interceptions'], zorder=3, height=0.75, label='Interception', color='green', left=top10['Tackles'])
+                ax.barh(top10['shortName'], top10['Clearance'], zorder=3, height=0.75, label='Clearance', color=acol, left=top10[['Tackles', 'Interceptions']].sum(axis=1))
+                for i, player in enumerate(top10['shortName']):
+                    for j, count in enumerate(top10[['Tackles', 'Interceptions', 'Clearance']].iloc[i]):
+                        if count > 0:
+                            x_position = sum(top10.iloc[i, 1:1+j]) + count / 2
+                            ax.text(x_position, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
+                    ax.text(top10['total'].iloc[i] + 0.25, i, str(top10['total'].iloc[i]), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
+                ax.set_facecolor(bg_color)
+                ax.tick_params(axis='x', colors=line_color, labelsize=8)
+                ax.tick_params(axis='y', colors=line_color, labelsize=10)
+                ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['left'].set_visible(True)
+                ax.legend(fontsize=8, loc='lower right')
+                return
+            
+            def xT_bar(ax):
+                top10_progressors = xT_df['shortName'][::-1].tolist()
+                progressor_pp = xT_df['xT from Pass'][::-1].tolist()
+                progressor_pc = xT_df['xT from Carry'][::-1].tolist()
+                total_rounded = xT_df['total'].round(2)[::-1].tolist()
+                ax.barh(top10_progressors, progressor_pp, label='xT from Pass', zorder=3, color=hcol, left=0)
+                ax.barh(top10_progressors, progressor_pc, label='xT from Carry', zorder=3, color=acol, left=progressor_pp)
+                for i, player in enumerate(top10_progressors):
+                    for j, count in enumerate([progressor_pp[i], progressor_pc[i]]):
+                        if count > 0:
+                            x_position = sum([progressor_pp[i], progressor_pc[i]][:j]) + count / 2
+                            ax.text(x_position, i, f"{count:.2f}", ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
+                    ax.text(xT_df['total'].iloc[i] + 0.01, 9-i, f"{total_rounded[i]:.2f}", ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
+                ax.set_facecolor(bg_color)
+                ax.tick_params(axis='x', colors=line_color, labelsize=8)
+                ax.tick_params(axis='y', colors=line_color, labelsize=10)
+                ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['left'].set_visible(True)
+                ax.legend(fontsize=8, loc='lower right')
+                return
+            
+            def ball_recoverers_bar(ax):
+                top10 = recovery_df.head(10).iloc[::-1]
+                ax.barh(top10['shortName'], top10['Ball Recoveries'], zorder=3, height=0.75, label='Ball Recoveries', color=hcol)
+                for i, player in enumerate(top10['shortName']):
+                    count = top10['Ball Recoveries'].iloc[i]
+                    if count > 0:
+                        ax.text(count / 2, i, str(count), ha='center', va='center', color=bg_color, fontsize=10, fontweight='bold')
+                    ax.text(count + 0.25, i, str(count), ha='left', va='center', color=line_color, fontsize=10, fontweight='bold')
+                ax.set_facecolor(bg_color)
+                ax.tick_params(axis='x', colors=line_color, labelsize=8)
+                ax.tick_params(axis='y', colors=line_color, labelsize=10)
+                ax.grid(True, zorder=1, ls='dotted', lw=1, color='gray')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['bottom'].set_visible(True)
+                ax.spines['left'].set_visible(True)
+                ax.legend(fontsize=8, loc='lower right')
+                return
+            
+            if top_type == 'Top Ball Progressors':
+                fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+                passer_bar(ax)
+                fig.text(0.5, 1.02, 'Top Ball Progressors', fontsize=12, fontweight='bold', ha='center', va='center')
+                fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
+                st.pyplot(fig)
+            elif top_type == 'Top Shot Sequences Involvements':
+                fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+                sh_sq_bar(ax)
+                fig.text(0.5, 1.02, 'Top Shot Sequence Involvements', fontsize=12, fontweight='bold', ha='center', va='center')
+                fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
+                st.pyplot(fig)
+            elif top_type == 'Top Defensive Involvements':
+                fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+                top_defender(ax)
+                fig.text(0.5, 1.02, 'Top Defensive Involvements', fontsize=12, fontweight='bold', ha='center', va='center')
+                fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
+                st.pyplot(fig)
+            elif top_type == 'Top Threat Creating Players':
+                fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+                xT_bar(ax)
+                fig.text(0.5, 1.02, 'Top Threat Creating Players', fontsize=12, fontweight='bold', ha='center', va='center')
+                fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
+                st.pyplot(fig)
+            elif top_type == 'Top Ball Recoverers':
+                fig, ax = plt.subplots(figsize=(10, 10), facecolor=bg_color)
+                ball_recoverers_bar(ax)
+                fig.text(0.5, 1.02, 'Top Ball Recoverers', fontsize=12, fontweight='bold', ha='center', va='center')
+                fig.text(0.5, 0.97, f'in the match {hteamName} {hgoal_count} - {agoal_count} {ateamName}', color='#1a1a1a', fontsize=10, ha='center', va='center')
+                st.pyplot(fig)
 else:
     st.write("أدخل رابط المباراة أو قم بتحميل ملف JSON واضغط 'تحليل المباراة'.")
