@@ -1,17 +1,15 @@
-# requirements.txt
 streamlit
 pandas
-numpy
 matplotlib
+numpy
 seaborn
 mplsoccer
-requests
+highlight_text
 pillow
-arabic-reshaper
-python-bidi
-selenium
-beautifulsoup4
-webdriver-manager
 unidecode
 scipy
-highlight-text
+arabic_reshaper
+python-bidi
+selenium
+webdriver_manager
+beautifulsoup4
