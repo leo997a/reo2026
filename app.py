@@ -72,14 +72,18 @@ line_color = st.sidebar.color_picker('لون الخطوط', '#ffffff', key='line
 
 # دالة استخراج البيانات من WhoScored
 def extract_match_dict(match_url):
+    driver = None  # تعيين driver إلى None افتراضيًا
     try:
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36"
         )
+        # تحديد مسار Chromium في Streamlit Cloud
+        chrome_options.binary_location = "/usr/bin/chromium"
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         st.write("جارٍ تحميل الصفحة...")
@@ -99,8 +103,8 @@ def extract_match_dict(match_url):
         st.error(f"خطأ أثناء استخراج البيانات: {str(e)}")
         return None
     finally:
-        driver.quit()
-
+        if driver is not None:  # التحقق من وجود driver قبل استدعاء quit
+            driver.quit()
 # دالة معالجة البيانات
 def extract_data_from_dict(data):
     try:
