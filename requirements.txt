@@ -1,0 +1,17 @@
+# requirements.txt
+streamlit
+pandas
+numpy
+matplotlib
+seaborn
+mplsoccer
+requests
+pillow
+arabic-reshaper
+python-bidi
+selenium
+beautifulsoup4
+webdriver-manager
+unidecode
+scipy
+highlight-text
