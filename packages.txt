@@ -1,0 +1,4 @@
+chromium
+chromium-driver
+libstdc++6
+libgcc1
