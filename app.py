@@ -100,11 +100,6 @@ line_color = st.sidebar.color_picker(
 
 
 @st.cache_data
-import requests
-from bs4 import BeautifulSoup
-import json
-
-@st.cache_data
 def extract_match_dict(match_url):
     try:
         headers = {
