@@ -17,13 +17,6 @@ from scipy.spatial import ConvexHull
 import arabic_reshaper
 from bidi.algorithm import get_display
 import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import warnings
 import os
@@ -107,43 +100,40 @@ line_color = st.sidebar.color_picker(
 
 
 @st.cache_data
+import requests
+from bs4 import BeautifulSoup
+import json
+
+@st.cache_data
 def extract_match_dict(match_url):
-    driver = None
     try:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        )
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        st.write("جارٍ تحميل الصفحة...")
-        driver.get(match_url)
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, 'script'))
-        )
-        time.sleep(5)
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        element = soup.find(lambda tag: tag.name ==
-                            'script' and 'matchCentreData' in tag.text)
-        if not element:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36"
+        }
+        response = requests.get(match_url, headers=headers, timeout=15)
+
+        if response.status_code != 200:
+            st.error(f"فشل في تحميل الصفحة. رمز الحالة: {response.status_code}")
+            return None
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        script_tag = soup.find(lambda tag: tag.name == 'script' and 'matchCentreData' in tag.text)
+
+        if not script_tag:
             st.error("لم يتم العثور على matchCentreData في الصفحة")
             return None
-        matchdict = json.loads(element.text.split(
-            "matchCentreData: ")[1].split(',\n')[0])
+
+        # استخراج البيانات من داخل الـ script
+        raw_text = script_tag.string or script_tag.text
+        match_data_json = raw_text.split("matchCentreData: ")[1].split(",\n")[0]
+        matchdict = json.loads(match_data_json)
+
         return matchdict
+
     except Exception as e:
-        st.error(f"خطأ أثناء استخراج البيانات: {str(e)}")
+        st.error(f"حدث خطأ أثناء استخراج البيانات: {str(e)}")
         return None
-    finally:
-        if driver is not None:
-            try:
-                driver.quit()
-            except BaseException:
-                pass
+
 
 # دالة معالجة البيانات
 
