@@ -16,6 +16,7 @@ from unidecode import unidecode
 from scipy.spatial import ConvexHull
 import arabic_reshaper
 from bidi.algorithm import get_display
+import requests
 import time
 from bs4 import BeautifulSoup
 import warnings
